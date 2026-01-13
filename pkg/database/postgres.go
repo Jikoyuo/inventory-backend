@@ -34,9 +34,15 @@ func ConnectDB() *gorm.DB {
 		},
 	)
 
-	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{
+	// Force simple protocol logic
+	// Note: We keep DSN string clean and rely on postgres.Config
+
+	db, err := gorm.Open(postgres.New(postgres.Config{
+		DSN:                  dsn,
+		PreferSimpleProtocol: true, // Disables implicit prepared statements for Supabase Transaction Mode
+	}), &gorm.Config{
 		Logger:      newLogger,
-		PrepareStmt: false,
+		PrepareStmt: false, // Disables GORM-level prepared statements
 	})
 
 	if err != nil {
