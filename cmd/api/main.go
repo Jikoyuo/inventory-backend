@@ -205,7 +205,11 @@ func seedPrivilegesRolesAndAdmin(db *gorm.DB) {
 	_, err = userRepo.FindByEmail("admin@example.com")
 	if err != nil {
 		// Create admin user
-		masterRole, _ := roleRepo.FindByCode(model.RoleMasterAdmin)
+		masterRole, err := roleRepo.FindByCode(model.RoleMasterAdmin)
+		if err != nil {
+			log.Printf("Error: Failed to fetch MASTER_ADMIN role: %v", err)
+			return
+		}
 
 		admin := &model.User{
 			Email:       "admin@example.com",
