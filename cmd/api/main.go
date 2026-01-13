@@ -202,7 +202,7 @@ func seedPrivilegesRolesAndAdmin(db *gorm.DB) {
 	}
 
 	// 4. Create default admin user with MASTER_ADMIN role
-	_, err = userRepo.FindByEmail("admin@example.com")
+	existingAdmin, err := userRepo.FindByEmail("admin@example.com")
 	if err != nil {
 		// Create admin user
 		masterRole, err := roleRepo.FindByCode(model.RoleMasterAdmin)
@@ -231,6 +231,14 @@ func seedPrivilegesRolesAndAdmin(db *gorm.DB) {
 			log.Printf("Warning: Failed to create admin user: %v", err)
 		} else {
 			log.Println("✅ Admin user created: admin@example.com / admin123 (MASTER_ADMIN)")
+		}
+	} else {
+		// Force reset password for admin if exists (Dev/Debug helper)
+		// This ensures that if the db persists but we want to be sure default works
+		if err := existingAdmin.SetPassword("admin123"); err == nil {
+			if err := userRepo.Update(existingAdmin); err == nil {
+				log.Println("✅ Admin user password verified/reset to: admin123")
+			}
 		}
 	}
 }
