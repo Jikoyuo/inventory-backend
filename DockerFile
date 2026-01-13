@@ -1,35 +1,35 @@
-# Stage 1: Build (Memasak Code)
+# Stage 1: Build
 FROM golang:1.23-alpine AS builder
 
-# Install git (diperlukan untuk fetch dependency)
+# Install git
 RUN apk add --no-cache git
 
 WORKDIR /app
 
-# Copy file dependency dulu biar cache-nya awet
-COPY go.mod go.sum ./
+# Copy dependency
+# (Pakai tanda * supaya kalau go.sum belum ada, dia gak error)
+COPY go.mod go.sum* ./
 RUN go mod download
 
-# Copy seluruh source code
+# Copy source code
 COPY . .
 
 # Build aplikasi
-# Perhatikan path cmd/api/main.go ini
-RUN go build -o binary ./cmd/api/main.go
+# TAMBAHAN PENTING: CGO_ENABLED=0
+# Ini memaksa Go bikin binary yang bisa jalan di Alpine tanpa library C tambahan
+RUN CGO_ENABLED=0 GOOS=linux go build -o binary ./cmd/api/main.go
 
-# Stage 2: Run (Menyajikan Hasil Masakan)
+# Stage 2: Run
 FROM alpine:latest
 
 WORKDIR /app
 
-# Install sertifikat SSL (WAJIB untuk konek ke Supabase)
+# Install sertifikat SSL (Supabase butuh ini)
 RUN apk add --no-cache ca-certificates
 
-# Copy hasil build dari Stage 1
+# Copy binary dari stage 1
 COPY --from=builder /app/binary .
 
-# Expose port (hanya dokumentasi, Koyeb otomatis detect)
 EXPOSE 8080
 
-# Jalankan aplikasi
 CMD ["./binary"]
