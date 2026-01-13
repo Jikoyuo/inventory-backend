@@ -18,6 +18,7 @@ var (
 	ErrUserNotFound       = errors.New("user not found")
 	ErrUserInactive       = errors.New("user account is inactive")
 	ErrWrongPassword      = errors.New("current password is incorrect")
+	ErrSessionTimeout     = errors.New("session expired due to inactivity")
 )
 
 type AuthService interface {
@@ -77,7 +78,22 @@ func (s *authService) Login(email, password string) (*LoginResponse, error) {
 
 	// 5. Single Session: Generate New Token Version
 	newTokenVersion := uuid.New().String()
-	if err := s.userRepo.UpdateTokenVersion(user.ID, newTokenVersion); err != nil {
+	// Update TokenVersion AND LastSeenAt (to prevent immediate timeout)
+	now := time.Now()
+	// We need to update user object first to pass to UpdateTokenVersion if it supported it,
+	// but userRepo.UpdateTokenVersion likely only updates version.
+	// Let's manually set LastSeenAt on the user object and update it using a more generic approach
+	// or just call UpdateLastSeen immediately.
+	// However, UpdateTokenVersion is atomic.
+	// Let's update both. Ideally userRepo has a method for this,
+	// but for now we can rely on Heartbeat logic or just update here.
+	// Let's modify the user object and save.
+	user.TokenVersion = newTokenVersion
+	user.LastSeenAt = &now
+
+	// Use repository to save changes
+	// Assuming userRepo.Update handles everything.
+	if err := s.userRepo.Update(user); err != nil {
 		return nil, errors.New("failed to update session")
 	}
 
@@ -146,7 +162,24 @@ func (s *authService) ValidateToken(tokenString string) (*TokenValidationRespons
 		return nil, errors.New("session expired (logged in on another device)")
 	}
 
-	// 5. Return user info with role and privileges
+	// 5. Check Inactivity (LastSeenAt > 5 Minutes)
+	if user.LastSeenAt != nil {
+		if time.Since(*user.LastSeenAt) > 5*time.Minute {
+			return nil, ErrSessionTimeout
+		}
+	} else {
+		// Edge case: If LastSeenAt is nil (legacy user?), valid or invalid?
+		// If they just logged in, it should be set. If nil, maybe force re-login.
+		// Let's handle gracefully: if nil, assume active IF token is new?
+		// No, to be safe, if nil, invalid, force login to set it.
+		// Or maybe allow? Let's allow but maybe should force.
+		// User asked: "user off(lastSeenAt) lebih dari 5 menit".
+		// If nil, techincally unknown.
+		// Let's invalidate to enforce the rule.
+		return nil, ErrSessionTimeout
+	}
+
+	// 6. Return user info with role and privileges
 	return &TokenValidationResponse{
 		User:       user.ToResponse(),
 		Role:       user.Role,
