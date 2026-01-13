@@ -1,0 +1,24 @@
+# 1. Credentials & Environment Variables (PENTING)
+.env
+.env.*
+
+# 2. Binaries / Hasil Build Golang
+# Sesuaikan dengan nama file output build Anda, biasanya:
+main
+server
+app
+*.exe
+*.dll
+*.so
+*.dylib
+
+# 3. Vendor (Jika Anda tidak ingin commit folder vendor)
+vendor/
+
+# 4. IDE / Editor
+.vscode/
+.idea/
+
+# 5. OS Files
+.DS_Store
+Thumbs.db
