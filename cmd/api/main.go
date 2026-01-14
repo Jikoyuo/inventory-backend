@@ -32,7 +32,11 @@ func main() {
 	// 2. Setup Database
 	db := database.ConnectDB()
 	// Auto Migrate (Hati-hati di production, sebaiknya pakai tools migrasi terpisah)
-	db.AutoMigrate(&model.Product{}, &model.Transaction{}, &model.User{}, &model.Privilege{}, &model.Role{}, &model.Shift{})
+	if err := db.AutoMigrate(&model.Product{}, &model.Transaction{}, &model.User{}, &model.Privilege{}, &model.Role{}, &model.Shift{}); err != nil {
+		log.Printf("❌ AutoMigrate failed: %v", err)
+	} else {
+		log.Println("✅ AutoMigrate completed successfully (including shifts table)")
+	}
 
 	// 3. Seed default privileges, roles, and admin user
 	seedPrivilegesRolesAndAdmin(db)
