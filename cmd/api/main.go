@@ -125,9 +125,10 @@ func main() {
 	})
 
 	// Shift Routes (MASTER_ADMIN only for CUD, authenticated users can view their own)
+	// NOTE: Order matters! More specific routes must come before parameterized routes
 	protected.Get("/shifts", shiftHandler.GetShifts)
+	protected.Get("/shifts/user/:user_id", shiftHandler.GetShiftsByUser) // Must be before /shifts/:id
 	protected.Get("/shifts/:id", shiftHandler.GetShift)
-	protected.Get("/shifts/user/:user_id", shiftHandler.GetShiftsByUser)
 	protected.Post("/shifts", middleware.RequirePrivilege("shift:create"), shiftHandler.CreateShift)
 	protected.Put("/shifts/:id", middleware.RequirePrivilege("shift:update"), shiftHandler.UpdateShift)
 	protected.Delete("/shifts/:id", middleware.RequirePrivilege("shift:delete"), shiftHandler.DeleteShift)
