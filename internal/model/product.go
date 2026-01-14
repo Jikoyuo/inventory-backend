@@ -6,7 +6,7 @@ type Product struct {
 	Name  string `gorm:"type:varchar(255);not null" json:"name" validate:"required"`
 	Stock int    `gorm:"default:0" json:"stock"`
 	Unit  string `gorm:"type:varchar(20)" json:"unit"`
-	Price int64  `gorm:"default:0" json:"price"`
+	Price int64  `gorm:"default:0" json:"price" validate:"required,gt=0"`
 
 	// User tracking
 	CreatedByUserID *string `gorm:"type:varchar(255)" json:"created_by_user_id,omitempty"`

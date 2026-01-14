@@ -25,4 +25,9 @@ var DefaultPrivileges = []Privilege{
 	{Code: "transaction:create", Name: "Create Transaction"},
 	// Dashboard
 	{Code: "dashboard:view", Name: "View Dashboard"},
+	// Shift management (MASTER_ADMIN only)
+	{Code: "shift:view", Name: "View Shift"},
+	{Code: "shift:create", Name: "Create Shift"},
+	{Code: "shift:update", Name: "Update Shift"},
+	{Code: "shift:delete", Name: "Delete Shift"},
 }

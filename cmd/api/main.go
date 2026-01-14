@@ -32,7 +32,7 @@ func main() {
 	// 2. Setup Database
 	db := database.ConnectDB()
 	// Auto Migrate (Hati-hati di production, sebaiknya pakai tools migrasi terpisah)
-	db.AutoMigrate(&model.Product{}, &model.Transaction{}, &model.User{}, &model.Privilege{}, &model.Role{})
+	db.AutoMigrate(&model.Product{}, &model.Transaction{}, &model.User{}, &model.Privilege{}, &model.Role{}, &model.Shift{})
 
 	// 3. Seed default privileges, roles, and admin user
 	seedPrivilegesRolesAndAdmin(db)
@@ -47,17 +47,20 @@ func main() {
 	userRepo := repository.NewUserRepo(db)
 	privilegeRepo := repository.NewPrivilegeRepo(db)
 	roleRepo := repository.NewRoleRepo(db)
+	shiftRepo := repository.NewShiftRepo(db)
 
 	invService := service.NewInventoryService(productRepo, txRepo, db, wsHub)
 	dashService := service.NewDashboardService(txRepo)
 	authService := service.NewAuthService(userRepo, wsHub)
 	userService := service.NewUserService(userRepo, privilegeRepo, roleRepo)
+	shiftService := service.NewShiftService(shiftRepo, userRepo, wsHub)
 
 	invHandler := handler.NewInventoryHandler(invService)
 	dashHandler := handler.NewDashboardHandler(dashService)
 	authHandler := handler.NewAuthHandler(authService)
 	userHandler := handler.NewUserHandler(userService)
 	roleHandler := handler.NewRoleHandler(roleRepo)
+	shiftHandler := handler.NewShiftHandler(shiftService)
 
 	// 6. Setup Fiber
 	app := fiber.New(fiber.Config{
@@ -98,6 +101,9 @@ func main() {
 	protected.Get("/transactions/:id", middleware.RequirePrivilege("transaction:view"), invHandler.GetTransaction)
 	protected.Post("/transactions", middleware.RequirePrivilege("transaction:create"), invHandler.CreateTransaction)
 
+	// Financial Routes
+	protected.Get("/finance/stats", middleware.RequirePrivilege("transaction:view"), invHandler.GetFinancialStats)
+
 	// User Management Routes (with privilege checks)
 	protected.Get("/users", userHandler.GetUsers)
 	protected.Get("/users/:id", userHandler.GetUser)
@@ -118,7 +124,16 @@ func main() {
 		return c.JSON(privileges)
 	})
 
+	// Shift Routes (MASTER_ADMIN only for CUD, authenticated users can view their own)
+	protected.Get("/shifts", shiftHandler.GetShifts)
+	protected.Get("/shifts/:id", shiftHandler.GetShift)
+	protected.Get("/shifts/user/:user_id", shiftHandler.GetShiftsByUser)
+	protected.Post("/shifts", middleware.RequirePrivilege("shift:create"), shiftHandler.CreateShift)
+	protected.Put("/shifts/:id", middleware.RequirePrivilege("shift:update"), shiftHandler.UpdateShift)
+	protected.Delete("/shifts/:id", middleware.RequirePrivilege("shift:delete"), shiftHandler.DeleteShift)
+
 	// WebSocket Route
+	// Connect with ?user_id=<uuid> for targeted shift notifications
 	app.Use("/ws", func(c *fiber.Ctx) error {
 		if websocket.IsWebSocketUpgrade(c) {
 			return c.Next()
@@ -126,7 +141,15 @@ func main() {
 		return c.SendStatus(fiber.StatusUpgradeRequired)
 	})
 	app.Get("/ws", websocket.New(func(c *websocket.Conn) {
-		wsHub.Register <- c
+		// Check if user_id is provided for targeted messaging
+		userID := c.Query("user_id")
+		if userID != "" {
+			// Register with user ID for targeted shift notifications
+			wsHub.RegisterWithUser(c, userID)
+		} else {
+			// Anonymous connection (general broadcasts only)
+			wsHub.Register <- c
+		}
 		defer func() { wsHub.Unregister <- c }()
 
 		for {

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
 
 	"go-inventory-ws/internal/model"
 	"go-inventory-ws/internal/repository"
@@ -21,6 +22,7 @@ type InventoryService interface {
 	GetAllProducts() ([]model.Product, error)
 	GetAllTransactions() ([]model.Transaction, error)
 	GetTransactionByID(id uuid.UUID) (*model.Transaction, error)
+	GetFinancialStats(startDate, endDate time.Time) (map[string]interface{}, error) // Added
 }
 
 type inventoryService struct {
@@ -167,12 +169,21 @@ func (s *inventoryService) RecordTransaction(req *model.Transaction, userID, use
 		return errors.New(errorMsg)
 	}
 
+	// 1b. Strict Validation for Payment and Logic
+	// User requested "bisa diisi 0" (can be 0) for now until payment gateway is setup.
+	if req.PaymentMethod != "CASH" && req.PaymentMethod != "TRANSFER" && req.PaymentMethod != "0" && req.PaymentMethod != "" {
+		return errors.New("invalid payment method: must be CASH, TRANSFER, or 0")
+	}
+
 	// Gunakan Transaction Block (Atomic Operation)
 	return s.db.Transaction(func(tx *gorm.DB) error {
 		var product model.Product
 		if err := tx.Set("gorm:query_option", "FOR UPDATE").First(&product, "id = ?", req.ProductID).Error; err != nil {
 			return errors.New("product not found")
 		}
+
+		// Calculate Total Amount accurately (Snapshot)
+		req.TotalAmount = product.Price * int64(req.Quantity)
 
 		// B. Hitung Logic Stok
 		newStock := product.Stock
@@ -207,14 +218,17 @@ func (s *inventoryService) RecordTransaction(req *model.Transaction, userID, use
 				actionVerb = "removed"
 			}
 
-			payload := map[string]interface{}{
+			// Broadcast Stock Update
+			stockPayload := map[string]interface{}{
 				"type":   "stock_update",
 				"action": "transaction_created",
 				"transaction": map[string]interface{}{
-					"id":         req.ID,
-					"type":       actionType,
-					"quantity":   req.Quantity,
-					"product_id": product.ID,
+					"id":             req.ID,
+					"type":           actionType,
+					"quantity":       req.Quantity,
+					"total_amount":   req.TotalAmount,
+					"payment_method": req.PaymentMethod,
+					"product_id":     product.ID,
 					"product": map[string]interface{}{
 						"name": product.Name,
 						"sku":  product.SKU,
@@ -228,8 +242,17 @@ func (s *inventoryService) RecordTransaction(req *model.Transaction, userID, use
 				},
 				"message": fmt.Sprintf("%s %s %d units of '%s' (%s)", userName, actionVerb, req.Quantity, product.Name, actionType),
 			}
-			msg, _ := json.Marshal(payload)
-			s.wsHub.Broadcast <- msg
+			stockMsg, _ := json.Marshal(stockPayload)
+			s.wsHub.Broadcast <- stockMsg
+
+			// Broadcast Financial Update (Notify that financial stats might have changed)
+			// Clients should re-fetch /api/finance/stats or we can push a flag
+			finPayload := map[string]interface{}{
+				"type":    "financial_update",
+				"message": "Financial stats updated due to new transaction",
+			}
+			finMsg, _ := json.Marshal(finPayload)
+			s.wsHub.Broadcast <- finMsg
 		}()
 
 		return nil
@@ -246,4 +269,28 @@ func (s *inventoryService) GetAllTransactions() ([]model.Transaction, error) {
 
 func (s *inventoryService) GetTransactionByID(id uuid.UUID) (*model.Transaction, error) {
 	return s.transactionRepo.FindByID(id)
+}
+
+func (s *inventoryService) GetFinancialStats(startDate, endDate time.Time) (map[string]interface{}, error) {
+	// 1. Get Income and Expense
+	income, expense, err := s.transactionRepo.GetFinancialSummary(startDate, endDate)
+	if err != nil {
+		return nil, err
+	}
+
+	// 2. Get Current Valuation and other stats (using existing Dashboard logic or part of it)
+	// Usually dashboard stats are overall, but Valuation is snapshot.
+	// We can reuse GetDashboardStats for valuation.
+	stats, err := s.transactionRepo.GetDashboardStats()
+	if err != nil {
+		return nil, err
+	}
+
+	return map[string]interface{}{
+		"total_income":    income,
+		"total_expense":   expense,
+		"total_valuation": stats.TotalValuation, // Current snapshot
+		"period_start":    startDate.Format("2006-01-02"),
+		"period_end":      endDate.Format("2006-01-02"),
+	}, nil
 }

@@ -1,6 +1,8 @@
 package handler
 
 import (
+	"time"
+
 	"go-inventory-ws/internal/model"
 	"go-inventory-ws/internal/service"
 
@@ -135,4 +137,34 @@ func (h *InventoryHandler) GetTransaction(c *fiber.Ctx) error {
 		return c.Status(404).JSON(fiber.Map{"error": "Transaction not found"})
 	}
 	return c.JSON(tx)
+}
+
+func (h *InventoryHandler) GetFinancialStats(c *fiber.Ctx) error {
+	rangeParam := c.Query("range", "7d") // Default 7 days
+	now := time.Now()
+	var startDate time.Time
+	endDate := now
+
+	switch rangeParam {
+	case "7d":
+		startDate = now.AddDate(0, 0, -7)
+	case "1m":
+		startDate = now.AddDate(0, -1, 0)
+	case "3m":
+		startDate = now.AddDate(0, -3, 0)
+	case "6m":
+		startDate = now.AddDate(0, -6, 0)
+	case "12m":
+		startDate = now.AddDate(0, -12, 0)
+	default:
+		// Attempt to parse custom dates? For now fallback to 7d
+		startDate = now.AddDate(0, 0, -7)
+	}
+
+	stats, err := h.service.GetFinancialStats(startDate, endDate)
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
+
+	return c.JSON(stats)
 }

@@ -14,6 +14,7 @@ type TransactionRepository interface {
 	GetDashboardStats() (*DashboardStats, error)
 	FindAll() ([]model.Transaction, error)
 	FindByID(id uuid.UUID) (*model.Transaction, error)
+	GetFinancialSummary(startDate, endDate time.Time) (int64, int64, error)
 }
 
 // StockMovementData untuk chart data
@@ -95,4 +96,33 @@ func (r *transactionRepo) GetDashboardStats() (*DashboardStats, error) {
 	r.db.Model(&model.Product{}).Select("COALESCE(SUM(stock * price), 0)").Scan(&stats.TotalValuation)
 
 	return &stats, nil
+}
+
+func (r *transactionRepo) GetFinancialSummary(startDate, endDate time.Time) (int64, int64, error) {
+	var income int64
+	var expense int64
+
+	// According to user request:
+	// Pemasukan (Income) = Query from Type IN
+	// Pengeluaran (Expense) = Query from Type OUT
+
+	// Calculate Income (Type IN)
+	err := r.db.Model(&model.Transaction{}).
+		Where("type = ? AND created_at BETWEEN ? AND ?", model.TxIn, startDate, endDate).
+		Select("COALESCE(SUM(total_amount), 0)").
+		Scan(&income).Error
+	if err != nil {
+		return 0, 0, err
+	}
+
+	// Calculate Expense (Type OUT)
+	err = r.db.Model(&model.Transaction{}).
+		Where("type = ? AND created_at BETWEEN ? AND ?", model.TxOut, startDate, endDate).
+		Select("COALESCE(SUM(total_amount), 0)").
+		Scan(&expense).Error
+	if err != nil {
+		return 0, 0, err
+	}
+
+	return income, expense, nil
 }
