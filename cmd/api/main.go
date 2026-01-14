@@ -38,7 +38,6 @@ func main() {
 		log.Println("✅ AutoMigrate completed successfully (including shifts table)")
 	}
 
-	// 3. Seed default privileges, roles, and admin user
 	seedPrivilegesRolesAndAdmin(db)
 
 	// 4. Setup WebSocket Hub
